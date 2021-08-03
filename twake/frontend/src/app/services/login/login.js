@@ -18,6 +18,7 @@ import AccessRightsService from 'services/AccessRightsService';
 import Environment from 'environment/environment';
 import LocalStorage from 'services/LocalStorage';
 import authProviderService from './AuthProviderService';
+import ApiService from "services/ApiService";
 
 class Login extends Observable {
   // Promise resolved when user is defined
@@ -186,7 +187,7 @@ class Login extends Observable {
     }
   }
 
-  updateUser(callback) {
+  async updateUser(callback) {
     if (Globals.store_public_access_get_data) {
       this.firstInit = true;
       this.state = 'logged_out';
@@ -194,46 +195,37 @@ class Login extends Observable {
       return;
     }
 
-    var that = this;
-    Api.post(
-      'users/current/get',
-      { timezone: new Date().getTimezoneOffset() },
-      function (res) {
-        that.firstInit = true;
-        if (res.errors.length > 0) {
-          if (
-            (res.errors.indexOf('redirect_to_openid') >= 0 ||
-              that.server_infos.configuration?.accounts.type === 'console') &&
-            !that.external_login_error
-          ) {
-            let developerSuffix = '';
-            if (Environment.env_dev && document.location.host.indexOf('localhost') === 0) {
-              developerSuffix = '?localhost=1&port=' + window.location.port;
-            }
-
-            document.location = Api.route('users/console/openid' + developerSuffix);
-            return;
-          }
-
-          that.state = 'logged_out';
-          that.notify();
-
-          WindowState.setPrefix();
-          WindowState.setSuffix();
-          RouterServices.push(
-            RouterServices.addRedirection(
-              `${RouterServices.pathnames.LOGIN}${RouterServices.history.location.search}`,
-            ),
-          );
-        } else {
-          that.startApp(res.data);
+    this.firstInit = true;
+    ApiService.users.getCurrent().then(user=>{
+      this.startApp(user);
+    }).catch(res=>{
+      if (
+          (res.message.indexOf('redirect_to_openid') >= 0 ||
+              this.server_infos.configuration?.accounts.type === 'console') &&
+          !this.external_login_error
+      ) {
+        let developerSuffix = '';
+        if (Environment.env_dev && document.location.host.indexOf('localhost') === 0) {
+          developerSuffix = '?localhost=1&port=' + window.location.port;
         }
 
-        callback && callback();
-      },
-      false,
-      { disableJWTAuthentication: true },
-    );
+        document.location = Api.route('users/console/openid' + developerSuffix);
+        return;
+      }
+
+      this.state = 'logged_out';
+      this.notify();
+
+      WindowState.setPrefix();
+      WindowState.setSuffix();
+      RouterServices.push(
+          RouterServices.addRedirection(
+              `${RouterServices.pathnames.LOGIN}${RouterServices.history.location.search}`,
+          ),
+      );
+
+
+  });
   }
 
   setPage(page) {
@@ -268,31 +260,19 @@ class Login extends Observable {
 
     const that = this;
 
-    Api.post(
-      'users/login',
-      {
-        username: username,
-        password: password,
-        remember_me: rememberme,
-        device: {},
-      },
-      function (res) {
-        if (res && res.data && res.data.status === 'connected') {
-          if (that.waitForVerificationTimeout) {
-            clearTimeout(that.waitForVerificationTimeout);
-          }
-          that.login_loading = false;
-          that.init();
-          return RouterServices.replace(RouterServices.pathnames.LOGIN);
-        } else {
-          that.login_error = true;
-          that.login_loading = false;
-          that.notify();
-        }
-      },
-      false,
-      { disableJWTAuthentication: true },
-    );
+    ApiService.users.login(username,password,rememberme).then(res=>{
+      if (that.waitForVerificationTimeout) {
+        clearTimeout(that.waitForVerificationTimeout);
+      }
+      that.login_loading = false;
+      that.init();
+      return RouterServices.replace(RouterServices.pathnames.LOGIN);
+    }).catch(e=>{
+      that.login_error = true;
+      that.login_loading = false;
+      that.notify();
+    });
+
   }
 
   clearLogin() {

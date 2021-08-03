@@ -9,6 +9,7 @@ import Languages from 'services/languages/languages';
 import Globals from 'services/Globals';
 import ModalManager from 'app/components/Modal/ModalManager';
 import NewVersionModal from './NewVersionModal';
+import ApiService from "services/ApiService";
 
 let lastScrape: number = 0;
 
@@ -29,17 +30,16 @@ const NewVersionComponent = (): JSX.Element => {
     }
     lastScrape = new Date().getTime();
 
-    const config = (await Api.get('core/version')) as ConfigurationResource;
+    const serverInfo = await ApiService.general.getServerInfo();
+
     const currentVersion: string = Globals.version.version_detail;
-    const newestVersion: string = config.data.version?.current || '';
-    const minimalWebVersion: string = config.data.version?.minimal?.web || '';
+    const newestVersion: string = serverInfo?.version.current || '';
+    const minimalWebVersion: string = serverInfo?.version.minimal?.web || '';
 
     const shouldDisplayModal: boolean =
-      minimalWebVersion && compareVersion(minimalWebVersion, currentVersion) > 0 ? true : false;
+      !!(minimalWebVersion && compareVersion(minimalWebVersion, currentVersion) > 0);
     const shouldDisplayBanner: boolean =
-      newestVersion && compareVersion(newestVersion, currentVersion) > 0 && !shouldDisplayModal
-        ? true
-        : false;
+      !!(newestVersion && compareVersion(newestVersion, currentVersion) > 0 && !shouldDisplayModal);
 
     if (shouldDisplayModal) {
       return ModalManager.open(

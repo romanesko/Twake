@@ -38,6 +38,7 @@ describe("The /users API", () => {
       email: "admin@admin.admin",
       username: "adminuser",
       firstName: "admin",
+      password: "admin",
     });
     await testDbService.createUser([workspacePk]);
 

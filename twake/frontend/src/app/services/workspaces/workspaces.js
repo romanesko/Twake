@@ -21,6 +21,9 @@ import InitService from 'app/services/InitService';
 import Globals from 'services/Globals';
 import JWTStorage from 'services/JWTStorage';
 import ConsoleService from 'services/Console/ConsoleService';
+import ApiService from "services/ApiService";
+import CurrentUser from 'app/services/user/CurrentUser';
+
 
 class Workspaces extends Observable {
   constructor() {
@@ -43,16 +46,28 @@ class Workspaces extends Observable {
     this.didFirstSelection = false;
   }
 
-  updateCurrentWorkspaceId(workspaceId) {
+  async updateCurrentWorkspaceId(workspaceId) {
     if (this.currentWorkspaceId !== workspaceId && workspaceId && loginService.state === 'app') {
       this.currentWorkspaceId = workspaceId;
+      const companyId = Globals.window.workspaceService.currentGroupId;
+
+      const currentUser = CurrentUser.get();
+
       const workspace = DepreciatedCollections.get('workspaces').find(workspaceId);
       if (workspace) this.currentWorkspaceIdByGroup[workspace.group.id] = workspaceId;
 
       if (!this.getting_details[workspaceId]) {
         this.getting_details[workspaceId] = true;
 
+
+
         workspacesApps.unload(this.currentWorkspaceId);
+
+
+
+        const wsp = await ApiService.workspaces.get(companyId, workspaceId);
+
+
         Api.post('workspace/get', { workspaceId: workspaceId }, res => {
           if (res && res.data) {
             DepreciatedCollections.get('workspaces').updateObject(res.data);

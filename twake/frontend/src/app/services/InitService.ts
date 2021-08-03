@@ -1,7 +1,7 @@
 import Observable from 'services/Observable/Observable';
 import Api from 'services/Api';
 
-type ServerInfoType = null | {
+export type ServerInfoType = null | {
   status: 'ready';
   version: {
     current: string;

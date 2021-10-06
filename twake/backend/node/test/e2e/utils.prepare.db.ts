@@ -56,11 +56,12 @@ export class TestDbService {
     this.deviceRepository = await this.database.getRepository<Device>("device", Device);
   }
   public get workspaces() {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     return [...this.workspacesMap.values()];
   }
 
-  async createCompany(id?: uuid): Promise<void> {
+  async createCompany(id?: uuid): Promise<Company> {
     const name = `TwakeAutotests-test-company-${this.rand()}`;
     this.company = await this.userService.companies.createCompany(
       getCompanyInstance({
@@ -70,12 +71,15 @@ export class TestDbService {
         identity_provider_id: id,
       }),
     );
+    return this.company;
   }
 
-  async createWorkspace(workspacePk: WorkspacePrimaryKey): Promise<Workspace> {
+  async createWorkspace(workspacePk?: WorkspacePrimaryKey): Promise<Workspace> {
     const name = `TwakeAutotests-test-workspace-${this.rand()}`;
 
-    if (!workspacePk.company_id) throw new Error("company_id is not defined for workspace");
+    if (!workspacePk) {
+      workspacePk = { id: uuidv1(), company_id: this.company.id };
+    }
 
     const workspace = await this.workspaceService.workspaces.create(
       getWorkspaceInstance({
@@ -84,7 +88,6 @@ export class TestDbService {
         logo: "workspace_logo",
         company_id: workspacePk.company_id,
       }),
-      { user: { id: "", server_request: true } },
     );
 
     const createdWorkspace = await this.workspaceService.workspaces.get({
@@ -115,11 +118,12 @@ export class TestDbService {
       username?: string;
       password?: string;
       cache?: User["cache"];
+      id?: uuid;
     } = {},
   ): Promise<User> {
     const user = new User();
     const random = this.rand();
-    user.id = uuidv1();
+    user.id = options.id || uuidv1();
     user.username_canonical = options.username || `test${random}`;
     user.first_name = options.firstName || `test${random}_first_name`;
     user.last_name = options.lastName || `test${random}_last_name`;

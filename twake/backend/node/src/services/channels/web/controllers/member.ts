@@ -1,5 +1,5 @@
 import { CrudController } from "../../../../core/platform/services/webserver/types";
-import { Pagination } from "../../../../core/platform/framework/api/crud-service";
+import { CrudExeption, Pagination } from "../../../../core/platform/framework/api/crud-service";
 import { ChannelMember, ChannelMemberPrimaryKey } from "../../entities";
 import { MemberService } from "../../provider";
 import {
@@ -30,7 +30,8 @@ export class ChannelMemberCrudController
       ResourceCreateResponse<ChannelMember>,
       ResourceListResponse<ChannelMember>,
       ResourceDeleteResponse
-    > {
+    >
+{
   constructor(protected service: MemberService) {}
 
   getPrimaryKey(
@@ -74,6 +75,10 @@ export class ChannelMemberCrudController
     request: FastifyRequest<{ Body: CreateChannelMemberBody; Params: ChannelMemberParameters }>,
     reply: FastifyReply,
   ): Promise<ResourceCreateResponse<ChannelMember>> {
+    if (!request.body.resource.user_id) {
+      throw CrudExeption.badRequest("user_id is required");
+    }
+
     const entity = plainToClass(ChannelMember, {
       ...request.body.resource,
       ...{

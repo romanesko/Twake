@@ -1,25 +1,26 @@
-import { cloneDeep, find } from "lodash";
+import _, { cloneDeep, find } from "lodash";
 import { diff } from "deep-object-diff";
 import {
+  getLogger,
+  RealtimeDeleted,
   RealtimeSaved,
   RealtimeUpdated,
-  RealtimeDeleted,
 } from "../../../../core/platform/framework";
 import {
-  UpdateResult,
-  DeleteResult,
-  Pagination,
-  ListResult,
-  SaveResult,
-  OperationType,
   CrudExeption,
+  DeleteResult,
+  ListResult,
+  OperationType,
+  Pagination,
+  SaveResult,
+  UpdateResult,
 } from "../../../../core/platform/framework/api/crud-service";
 import ChannelServiceAPI, {
   ChannelActivityMessage,
   ChannelPrimaryKey,
+  ChannelService,
   DefaultChannelService,
 } from "../../provider";
-import { getLogger } from "../../../../core/platform/framework";
 import { ChannelObject } from "./types";
 import {
   Channel,
@@ -33,7 +34,6 @@ import { ChannelType, ChannelVisibility, WorkspaceExecutionContext } from "../..
 import { isWorkspaceAdmin as userIsWorkspaceAdmin } from "../../../../utils/workspace";
 import { ResourceEventsPayload, User } from "../../../../utils/types";
 import { pick } from "../../../../utils/pick";
-import { ChannelService } from "../../provider";
 import {
   DirectChannel,
   getInstance as getDirectChannelInstance,
@@ -47,13 +47,25 @@ import Repository, {
 import { ChannelActivity } from "../../entities/channel-activity";
 import { DatabaseServiceAPI } from "../../../../core/platform/services/database/api";
 import {
-  PubsubPublish,
   PubsubParameter,
+  PubsubPublish,
 } from "../../../../core/platform/services/pubsub/decorators/publish";
 import { localEventBus } from "../../../../core/platform/framework/pubsub";
 import DefaultChannelServiceImpl from "./default/service";
 import UserServiceAPI from "../../../user/api";
-import _ from "lodash";
+import {
+  ChannelCounterEntity,
+  TYPE as ChannelCounterType,
+  ChannelCounterPrimaryKey,
+} from "../../entities/channel-counters";
+import {
+  WorkspaceCounterEntity,
+  WorkspaceCounterPrimaryKey,
+} from "../../../workspaces/entities/workspace_counters";
+import { countRepositoryItems } from "../../../../utils/counters";
+import { PlatformServicesAPI } from "../../../../core/platform/services/platform-services";
+import { CounterProvider } from "../../../../core/platform/services/counter/provider";
+import { CompanyCounterEntity } from "../../../user/entities/company_counters";
 
 const logger = getLogger("channel.service");
 
@@ -63,27 +75,31 @@ export class Service implements ChannelService {
   channelRepository: Repository<Channel>;
   directChannelRepository: Repository<DirectChannel>;
   defaultChannelService: DefaultChannelService;
+  private channelCounter: CounterProvider<ChannelCounterEntity>;
 
   constructor(
     private channelService: ChannelServiceAPI,
-    private database: DatabaseServiceAPI,
+    private platformServices: PlatformServicesAPI,
     private userService: UserServiceAPI,
   ) {}
 
   async init(): Promise<this> {
     this.defaultChannelService = new DefaultChannelServiceImpl(
-      this.database,
+      this.platformServices.database,
       this.channelService,
       this.userService,
     );
 
     try {
-      this.activityRepository = await this.database.getRepository(
+      this.activityRepository = await this.platformServices.database.getRepository(
         "channel_activity",
         ChannelActivity,
       );
-      this.channelRepository = await this.database.getRepository("channels", Channel);
-      this.directChannelRepository = await this.database.getRepository(
+      this.channelRepository = await this.platformServices.database.getRepository(
+        "channels",
+        Channel,
+      );
+      this.directChannelRepository = await this.platformServices.database.getRepository(
         "direct_channels",
         DirectChannel,
       );
@@ -97,7 +113,45 @@ export class Service implements ChannelService {
       logger.warn("Can not initialize default channel service", err);
     }
 
+    const channelCountersRepository =
+      await this.platformServices.database.getRepository<ChannelCounterEntity>(
+        ChannelCounterType,
+        ChannelCounterEntity,
+      );
+
+    this.channelCounter = await this.platformServices.counter.getCounter<ChannelCounterEntity>(
+      channelCountersRepository,
+    );
+    //
+    this.channelCounter.reviseCounter(async (pk: ChannelCounterPrimaryKey) => {
+      return countRepositoryItems(this.channelRepository, pk);
+    });
+
     return this;
+  }
+
+  private channelCountPk = (
+    company_id: string,
+    workspace_id: string,
+    id: string,
+    counter_type: string = "members",
+  ) =>
+    ({
+      company_id,
+      workspace_id,
+      id,
+      counter_type,
+    } as ChannelCounterPrimaryKey);
+
+  channelCounterIncrease(
+    companyId: string,
+    workspaceId: string,
+    channelId: string,
+    counterType: string,
+    increaseValue: number,
+  ): Promise<unknown> {
+    const pk = this.channelCountPk(companyId, workspaceId, channelId, counterType);
+    return this.channelCounter.increase(pk, increaseValue);
   }
 
   @RealtimeSaved<Channel>((channel, context) => [
@@ -621,9 +675,9 @@ export class Service implements ChannelService {
     channel: Channel,
     context?: WorkspaceExecutionContext,
   ): Promise<UsersIncludedChannel> {
-    let channelWithUsers: UsersIncludedChannel = { users: [], ...channel };
+    const channelWithUsers: UsersIncludedChannel = { users: [], ...channel };
     if (isDirectChannel(channel)) {
-      let users = [];
+      const users = [];
       for (const user of channel.members) {
         const e = await this.userService.formatUser(await this.userService.users.get({ id: user }));
         users.push(e);

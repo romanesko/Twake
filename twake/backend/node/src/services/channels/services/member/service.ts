@@ -36,6 +36,7 @@ import { localEventBus } from "../../../../core/platform/framework/pubsub";
 import { DatabaseServiceAPI } from "../../../../core/platform/services/database/api";
 import { plainToClass } from "class-transformer";
 import UserServiceAPI from "../../../user/api";
+import { PlatformServicesAPI } from "../../../../core/platform/services/platform-services";
 
 const USER_CHANNEL_KEYS = [
   "id",
@@ -67,18 +68,18 @@ export class Service implements MemberService {
   channelMembersRepository: Repository<MemberOfChannel>;
 
   constructor(
-    private database: DatabaseServiceAPI,
+    private platform: PlatformServicesAPI,
     private channelService: ChannelServiceAPI,
     protected userService: UserServiceAPI,
   ) {}
 
   async init(): Promise<this> {
     try {
-      this.userChannelsRepository = await this.database.getRepository(
+      this.userChannelsRepository = await this.platform.database.getRepository(
         "user_channels",
         ChannelMember,
       );
-      this.channelMembersRepository = await this.database.getRepository(
+      this.channelMembersRepository = await this.platform.database.getRepository(
         "channel_members",
         MemberOfChannel,
       );
@@ -119,6 +120,17 @@ export class Service implements MemberService {
 
     if (!channel) {
       throw CrudExeption.notFound("Channel does not exists");
+    }
+
+    const isUserInCompany = await this.userService.companies.getCompanyUser(
+      { id: context.channel.company_id },
+      { id: member.user_id },
+    );
+
+    if (!isUserInCompany) {
+      throw CrudExeption.badRequest(
+        "Сan not add a user to a channel who is not a member of the company",
+      );
     }
 
     const memberToUpdate = await this.userChannelsRepository.findOne(this.getPrimaryKey(member));
@@ -224,7 +236,6 @@ export class Service implements MemberService {
         company_id: member.company_id,
         workspace_id: member.workspace_id,
         id: member.channel_id,
-        user_id: member.user_id,
         user_member: null,
       },
     },
@@ -365,7 +376,7 @@ export class Service implements MemberService {
   }
 
   async addUsersToChannel(
-    users: Pick<User, "id">[] = [],
+    users: User[] = [],
     channel: ChannelEntity,
   ): Promise<
     ListResult<{ channel: ChannelEntity; added: boolean; member?: ChannelMember; err?: Error }>
@@ -406,6 +417,15 @@ export class Service implements MemberService {
           }
 
           const result = await this.save(member, null, context);
+
+          await this.channelService.channels.channelCounterIncrease(
+            context.channel.company_id,
+            context.channel.workspace_id,
+            channel.id,
+            "members",
+            1,
+          );
+
           return {
             channel,
             added: true,
@@ -426,7 +446,7 @@ export class Service implements MemberService {
   }
 
   async addUserToChannels(
-    user: Pick<User, "id">,
+    user: User,
     channels: ChannelEntity[],
   ): Promise<
     ListResult<{ channel: ChannelEntity; added: boolean; member?: ChannelMember; err?: Error }>
@@ -463,6 +483,15 @@ export class Service implements MemberService {
           }
 
           const result = await this.save(member, null, context);
+
+          await this.channelService.channels.channelCounterIncrease(
+            context.channel.company_id,
+            context.channel.workspace_id,
+            channel.id,
+            "members",
+            1,
+          );
+
           return { channel, member: result.entity, added: true };
         } catch (err) {
           logger.warn({ err }, "Member has not been added %o", member);
@@ -529,7 +558,7 @@ export class Service implements MemberService {
   }
 
   isCurrentUser(member: ChannelMember | MemberOfChannel, user: User): boolean {
-    return String(member.user_id) === String(user.id);
+    return user && String(member.user_id) === String(user.id);
   }
 
   isChannelMember(user: User, channel: Channel): Promise<ChannelMember> {

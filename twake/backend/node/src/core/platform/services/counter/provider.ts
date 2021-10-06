@@ -34,7 +34,7 @@ export class CounterProvider<T extends CounterEntity> {
   }
 
   reviseCounter(
-    handler: (pk: Partial<T>) => Promise<number>,
+    handler: (pk: Partial<T> | any) => Promise<number>,
     maxCalls: number = 10,
     maxPeriod: number = 24 * 60 * 60 * 1000,
   ): void {

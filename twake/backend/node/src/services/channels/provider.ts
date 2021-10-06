@@ -150,6 +150,14 @@ export interface ChannelService
     channel: Channel,
     context?: WorkspaceExecutionContext,
   ): Promise<UsersIncludedChannel>;
+
+  channelCounterIncrease(
+    companyId: string,
+    workspaceId: string,
+    channelId: string,
+    counterType: string,
+    increaseValue: number,
+  ): Promise<unknown>;
 }
 export interface MemberService
   extends TwakeServiceProvider,

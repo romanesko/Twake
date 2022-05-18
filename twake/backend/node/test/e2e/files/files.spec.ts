@@ -151,8 +151,6 @@ describe("The Files feature", () => {
 
       expect(response.statusCode).toBe(200);
 
-      console.log(response.json());
-
       let resources = response.json().resources;
       expect(resources.length).toBe(3);
 
